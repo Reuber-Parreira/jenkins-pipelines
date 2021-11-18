@@ -1,0 +1,65 @@
+/*
+ * The pipeline uses ssh connection. 
+ * Jenkins ssh key pair must be set with 'win-server-ssh-key' credential id (or replace it in code)
+ * Global environment variable needed
+ * EMAIL_DOMAIN (mandatoy email domain id on ssh key i.g.: '@email.com')
+ * WIN_ADM_USERNAME (windows server admin user)
+ * WIN_REGULAR_USERNAME (windows server regular user)
+ * WIN_SERVER_ADDRESS (windows server address)
+ */
+
+pipeline {
+  agent any
+  stages {
+    stage('Getting user Public Key') {
+      steps {
+        script {
+          def userInput = input (
+            id: 'publicKey',
+            message: 'Enter the content of your ssh public file (i.g.: id_rsa.pub)',
+            ok: 'Validate Key',
+            parameters: [string(name: 'sshPubKey')]
+          )
+
+          userInput = userInput.trim()
+
+          if(!userInput.contains("${EMAIL_DOMAIN}")) {
+            error ("""Your ssh key pair must be generated with the ${EMAIL_DOMAIN} email domain.
+            \nTry generate it by running:\n\$ ssh-keygen -t rsa -b 4096 -C 'your_email${EMAIL_DOMAIN}' -f ~/.ssh/<filename>
+            """)
+          }
+
+          sh "echo ${userInput} > ./public_key"
+        } // script
+      } // steps
+    } // stage
+
+    stage('Validating Windows server connection') {
+      steps {
+        sshagent(credentials: ['win-server-ssh-key']) {
+          sh './ssh/manage_pub_keys_windows_server/ssh_conn_validation.sh'
+        } // sshagent
+      } // steps
+    } // stage
+
+    stage('Adding pub key to Windows ssh server') {
+      steps {
+        sshagent(credentials: ['win-server-ssh-key']) {
+          sh '''
+            _PUBLIC_KEY=$(cat ./public_key)
+
+            _ADD_KEY_BATCH_COMMAND="echo ${_PUBLIC_KEY}>>C:\\Users\\\\${WIN_REGULAR_USERNAME}\\.ssh\\authorized_keys"
+
+            ssh ${WIN_ADM_USERNAME}@${WIN_SERVER_ADDRESS} "${_ADD_KEY_BATCH_COMMAND}"
+          '''
+        } // sshagent
+      } // steps
+    } // stage
+  } // stages
+
+  post {
+    always {
+      sh 'rm ./public_key'
+    }
+  }
+} // pipeline
