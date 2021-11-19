@@ -1,0 +1,87 @@
+pipeline {
+  agent any
+  stages {
+    stage('Getting user Public Key') {
+      steps {
+        script {
+          def userInput = input (
+            id: 'publicKey',
+            message: 'Enter the content of your gen_dataset_key.pub file',
+            ok: 'Validate Key',
+            parameters: [string(name: 'key')]
+          )
+
+          if(!userInput.contains("${_EMAIL_DOMAIN}")) {
+            error ("""Your ssh key pair must be generated with the ${_EMAIL_DOMAIN} email domain.
+            \nTry generate it by running:\n\$ ssh-keygen -t rsa -b 4096 -C 'your_email${_EMAIL_DOMAIN}' -f ~/.ssh/gen_dataset_key
+            """)
+          }
+
+          sh "echo ${userInput} > ./public_key"
+          stash 'public_key'
+        } // script
+      } // steps
+    } // stage
+
+
+    stage('Validating GenDataSet server connection') {
+      steps {
+        sshagent(credentials: ['gendataset-ssh-key']) {
+          sh '''
+
+            # Create .ssh dir if not exists
+            if [ ! -d ~/.ssh ]; then
+              mkdir ~/.ssh
+              chmod 0700 ~/.ssh
+              echo "Directory ~/.ssh didin't exist. It was created!"
+            else
+              echo "Directory ~/.ssh already exist!"
+            fi
+
+            # Create known_hosts dir if not exists
+            if [ ! -f ~/.ssh/known_hosts ]; then
+              touch ~/.ssh/known_hosts
+              echo "Created file ~/.ssh/known_hosts!"
+            else
+              echo "File ~/.ssh/known_hosts already exist!"
+            fi
+
+            _KEY_SCAN="$(ssh-keyscan -t rsa ${_GENDATASET_SERVER_ADDRESS})"
+            _KNOWN_HOSTS=$(cat ~/.ssh/known_hosts)
+
+            # Add key scan to known_hosts if not exists
+            if [[ ! ${_KNOWN_HOSTS} == *"${_KEY_SCAN}"* ] || [ -z "${_KNOWN_HOSTS}" ]]; then
+              echo "${_KEY_SCAN}" >> ~/.ssh/known_hosts
+              echo "Address added to known_hosts!"
+            else
+              echo "Host address already known"
+            fi
+
+            ssh ${_GENDATASET_SERVER_USERNAME}@${_GENDATASET_SERVER_ADDRESS} "exit"
+          '''
+        } // sshagent
+      } // steps
+    } // stage
+
+    stage('Adding user to GenDataSet server') {
+      steps {
+        unstash 'public_key'
+        sshagent(credentials: ['gendataset-ssh-key']) {
+          sh '''
+            _PUBLIC_KEY=$(cat ./public_key)
+
+            _ADD_KEY_BATCH_COMMAND="echo ${_PUBLIC_KEY} >>C:\\Users\\\\${_GENDATASET_REGULAR_USERNAME}\\.ssh\\authorized_keys"
+
+            ssh ${_GENDATASET_SERVER_USERNAME}@${_GENDATASET_SERVER_ADDRESS} "${_ADD_KEY_BATCH_COMMAND}"
+          '''
+        } // sshagent
+      } // steps
+    } // stage
+  } // stages
+
+  post {
+    always {
+      sh 'rm ./public_key'
+    }
+  }
+} // pipeline
