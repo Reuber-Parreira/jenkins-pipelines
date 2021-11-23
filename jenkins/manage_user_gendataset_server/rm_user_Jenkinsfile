@@ -1,0 +1,23 @@
+/*
+ * The pipeline uses ssh connection. Jenkins ssh key pair must be set.
+ * Global environment variable needed
+ * _EMAIL_DOMAIN (mandatoy email domain id on ssh key i.g.: '@email.com')
+ * _GENDATASET_SERVER_USERNAME (windows server admin user)
+ * _GENDATASET_REGULAR_USERNAME (windows server regular user)
+ * _GENDATASET_SERVER_ADDRESS (windows server address)
+ */
+
+pipeline {
+  agent any
+  stages {
+    stage('Getting user email') {
+      echo "Placeholder"
+    } // stage
+  } // stages
+
+  post {
+    always {
+      sh 'rm ./public_key'
+    }
+  }
+} // pipeline
