@@ -1,0 +1,42 @@
+/*
+ * The pipeline uses ssh connection. 
+ * Jenkins ssh key pair must be set with 'win-server-ssh-key' credential id (or replace it in code)
+ * Global environment variable needed
+ * EMAIL_DOMAIN (mandatoy email domain id on ssh key i.g.: '@email.com')
+ * WIN_ADM_USERNAME (windows server admin user)
+ * WIN_REGULAR_USERNAME (windows server regular user)
+ * WIN_SERVER_ADDRESS (windows server address)
+ */
+
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'userEmail', defaultValue: "${env.EMAIL_DOMAIN}", description: 'email id of the public key')
+    }
+
+    environment{
+       _USER_EMAIL = "${params.userEmail}"
+       _AUTH_KEY_FILE = "C:\\Users\\${env.WIN_REGULAR_USERNAME}\\.ssh\\authorized_keys"
+    }
+
+    stages {
+      stage('Validating Windows server connection') {
+      steps {
+        sshagent(credentials: ['win-server-ssh-key']) {
+            sh './ssh/manage_pub_keys_windows_server/ssh_conn_validation.sh'
+          } // sshagent
+        } // steps
+      } // stage
+      stage('Removing ssh pub key') {
+        steps{
+          sshagent(credentials: ['win-server-ssh-key']) {
+            sh '''
+              _RM_USER_CMD="findstr /V ${_USER_EMAIL} ${_AUTH_KEY_FILE} >${_AUTH_KEY_FILE}.tmp & type ${_AUTH_KEY_FILE}.tmp >${_AUTH_KEY_FILE} & del ${_AUTH_KEY_FILE}.tmp /q"
+              ssh ${WIN_ADM_USERNAME}@${WIN_SERVER_ADDRESS} "${_RM_USER_CMD}"
+            '''
+          } // sshagent
+        } // steps
+      } // stage
+    } // stages
+} // pipeline
